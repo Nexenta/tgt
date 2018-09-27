@@ -14,6 +14,7 @@ export ISCSI_RDMA
 export CEPH_RBD
 export GLFS_BD
 export SD_NOTIFY
+export CCOWBD
 
 .PHONY: all
 all: programs doc conf scripts

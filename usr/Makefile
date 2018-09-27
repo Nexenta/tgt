@@ -25,6 +25,10 @@ ifneq ($(SD_NOTIFY),)
 CFLAGS += -DUSE_SYSTEMD
 endif
 
+ifneq ($(CCOWBD),)
+MODULES += bs_ccowbd.so
+endif
+
 ifneq ($(shell test -e /usr/include/sys/eventfd.h && test -e /usr/include/libaio.h && echo 1),)
 CFLAGS += -DUSE_EVENTFD
 TGTD_OBJS += bs_aio.o
@@ -63,7 +67,7 @@ TGTD_OBJS += tgtd.o mgmt.o target.o scsi.o log.o driver.o util.o work.o \
 
 TGTD_DEP = $(TGTD_OBJS:.o=.d)
 
-LDFLAGS = -Wl,-E,-rpath=$(libdir)
+LDFLAGS += -Wl,-E,-rpath=$(libdir)
 
 .PHONY:all
 all: $(PROGRAMS) $(MODULES)
@@ -78,7 +82,7 @@ TGTADM_OBJS = tgtadm.o concat_buf.o
 TGTADM_DEP = $(TGTADM_OBJS:.o=.d)
 
 tgtadm: $(TGTADM_OBJS)
-	$(CC) $^ -o $@
+	$(CC) $^ -o $@ $(LDFLAGS)
 
 -include $(TGTADM_DEP)
 
@@ -86,7 +90,7 @@ TGTIMG_OBJS = tgtimg.o libssc.o libcrc32c.o
 TGTIMG_DEP = $(TGTIMG_OBJS:.o=.d)
 
 tgtimg: $(TGTIMG_OBJS)
-	$(CC) $^ -o $@
+	$(CC) $^ -o $@ $(LDFLAGS)
 
 -include $(TGTIMG_DEP)
 
@@ -96,6 +100,15 @@ tgtimg: $(TGTIMG_OBJS)
 
 %.so: %.c
 	$(CC) -shared $(CFLAGS) $*.c -o $*.so
+
+bs_ccowbd.so: bs_ccowbd.c
+	$(CC) -shared $(CFLAGS) $(LDFLAGS) \
+		-I/opt/nedge/include -I/opt/nedge/src/ccow/include \
+		-I/opt/nedge/src/ccow/src/include \
+		bs_ccowbd.c -o bs_ccowbd.so \
+		-L/opt/nedge/lib -ljemalloc \
+		-L/opt/nedge/src/ccow/src/libccow/.libs	-lccow \
+		-L/opt/nedge/src/ccow/src/libccowvol/.libs -lccowvol
 
 bs_rbd.so: bs_rbd.c
 	$(CC) -shared $(CFLAGS) bs_rbd.c -o bs_rbd.so -lrados -lrbd

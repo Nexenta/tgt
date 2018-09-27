@@ -20,6 +20,7 @@ struct concat_buf;
 #define PRODUCT_ID_LEN		16
 #define PRODUCT_REV_LEN		4
 #define BLOCK_LIMITS_VPD_LEN	0x3C
+#define BLOCK_CHAR_VPD_LEN	0x3C
 #define LBP_VPD_LEN		4
 
 #define PCODE_SHIFT		7
@@ -330,6 +331,8 @@ extern int lu_prevent_removal(struct scsi_lu *lu);
 extern uint64_t scsi_get_devid(int lid, uint8_t *pdu);
 extern int scsi_cmd_perform(int host_no, struct scsi_cmd *cmd);
 extern void sense_data_build(struct scsi_cmd *cmd, uint8_t key, uint16_t asc);
+extern void sense_info_data_build(struct scsi_cmd *cmd, uint8_t key,
+		uint16_t asc, uint32_t info);
 extern uint64_t scsi_rw_offset(uint8_t *scb);
 extern uint32_t scsi_rw_count(uint8_t *scb);
 extern int scsi_is_io_opcode(unsigned char op);

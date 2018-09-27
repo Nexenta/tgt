@@ -338,6 +338,40 @@ void sense_data_build(struct scsi_cmd *cmd, uint8_t key, uint16_t asc)
 	}
 }
 
+void sense_info_data_build(struct scsi_cmd *cmd, uint8_t key,
+		uint16_t asc, uint32_t info)
+{
+
+	if (cmd->dev->attrs.sense_format) {
+		/* descriptor format */
+		cmd->sense_buffer[0] = 0x72;  /* current, not deferred */
+		cmd->sense_buffer[1] = key;
+		cmd->sense_buffer[2] = (asc >> 8) & 0xff;
+		cmd->sense_buffer[3] = asc & 0xff;
+		cmd->sense_buffer[7] = 12; /* additional sense length */
+		cmd->sense_buffer[8] = 0;  /* information sense data descriptor */
+		cmd->sense_buffer[9] = 10; /* additional sense length */
+		cmd->sense_buffer[10] = 0x80; /* info valid  */
+		cmd->sense_buffer[12] = 0;
+		cmd->sense_buffer[13] = 0;
+		cmd->sense_buffer[14] = 0;
+		cmd->sense_buffer[15] = 0;
+		put_unaligned_be32(info, &cmd->sense_buffer[16]);
+		cmd->sense_len = 8 + 12;
+	} else {
+		/* fixed format */
+		int len = 0xa;
+		cmd->sense_buffer[0] = 0x70 | 0x80; /* current, not deferred, info valid*/
+		cmd->sense_buffer[2] = key;
+		put_unaligned_be32(info, &cmd->sense_buffer[3]);
+		cmd->sense_buffer[7] = len;
+		cmd->sense_buffer[12] = (asc >> 8) & 0xff;
+		cmd->sense_buffer[13] = asc & 0xff;
+		cmd->sense_len = len + 8;
+	}
+}
+
+
 #define        TGT_INVALID_DEV_ID      ~0ULL
 
 static uint64_t __scsi_get_devid(uint8_t *p)

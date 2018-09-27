@@ -34,6 +34,7 @@
 #include <unistd.h>
 #include <linux/fs.h>
 #include <sys/types.h>
+#include <assert.h>
 
 #include "list.h"
 #include "util.h"
@@ -236,6 +237,86 @@ sense:
 	scsi_set_in_resid_by_actual(cmd, 0);
 	scsi_set_out_resid_by_actual(cmd, 0);
 
+	sense_data_build(cmd, key, asc);
+	return SAM_STAT_CHECK_CONDITION;
+}
+
+static int sbc_ec(int host_no, struct scsi_cmd *cmd)
+{
+	int ret = 0;
+	unsigned char key = ILLEGAL_REQUEST;
+	uint16_t asc = ASC_LUN_NOT_SUPPORTED;
+
+	ret = device_reserved(cmd);
+	if (ret)
+		return SAM_STAT_RESERVATION_CONFLICT;
+
+	if (cmd->dev->attrs.removable && !cmd->dev->attrs.online) {
+		key = NOT_READY;
+		asc = ASC_MEDIUM_NOT_PRESENT;
+		goto sense;
+	}
+
+	switch((cmd->scb[1] & 0xF)) {
+
+	case 0x00:
+		/* EXTENDED COPY (LID1) */
+		ret = cmd->dev->bst->bs_cmd_submit(cmd);
+		if (ret) {
+			key = HARDWARE_ERROR;
+			asc = ASC_INTERNAL_TGT_FAILURE;
+			goto sense;
+		} else
+			return SAM_STAT_GOOD;
+		break;
+
+	default:
+		assert(0);
+		return spc_illegal_op(host_no, cmd);
+		break;
+	}
+
+sense:
+	sense_data_build(cmd, key, asc);
+	return SAM_STAT_CHECK_CONDITION;
+}
+
+static int sbc_rc(int host_no, struct scsi_cmd *cmd)
+{
+	int ret = 0;
+	unsigned char key = ILLEGAL_REQUEST;
+	uint16_t asc = ASC_LUN_NOT_SUPPORTED;
+
+	ret = device_reserved(cmd);
+	if (ret)
+		return SAM_STAT_RESERVATION_CONFLICT;
+
+	if (cmd->dev->attrs.removable && !cmd->dev->attrs.online) {
+		key = NOT_READY;
+		asc = ASC_MEDIUM_NOT_PRESENT;
+		goto sense;
+	}
+
+	switch((cmd->scb[1] & 0xF)) {
+
+	case 0x00:  /* RECEIVE COPY STATUS(LID1) */
+	case 0x03:  /* RECEIVE COPY OPERATING PARAMETERS */
+		ret = cmd->dev->bst->bs_cmd_submit(cmd);
+		if (ret) {
+			key = HARDWARE_ERROR;
+			asc = ASC_INTERNAL_TGT_FAILURE;
+			goto sense;
+		} else
+			return SAM_STAT_GOOD;
+		break;
+
+	default:
+		assert(0);
+		return spc_illegal_op(host_no, cmd);
+		break;
+	}
+
+sense:
 	sense_data_build(cmd, key, asc);
 	return SAM_STAT_CHECK_CONDITION;
 }
@@ -599,12 +680,13 @@ static int sbc_getlbastatus(int host_no, struct scsi_cmd *cmd)
 		goto sense;
 	}
 
-	offset = get_unaligned_be64(&cmd->scb[2]) << cmd->dev->blk_shift;
-	if (offset >= cmd->dev->size) {
+	offset = get_unaligned_be64(&cmd->scb[2]);
+	if (offset >= cmd->dev->size >> cmd->dev->blk_shift) {
 		key = ILLEGAL_REQUEST;
 		asc = ASC_LBA_OUT_OF_RANGE;
 		goto sense;
 	}
+	offset = offset << cmd->dev->blk_shift;
 
 	alloc_len = get_unaligned_be32(&cmd->scb[10]);
 	if (alloc_len < 4 || scsi_get_in_length(cmd) < alloc_len) {
@@ -911,15 +993,15 @@ static struct device_type_template sbc_template = {
 		{spc_illegal_op,},
 		{spc_illegal_op,},
 		{spc_illegal_op,},
-		{spc_illegal_op,},
-		{spc_illegal_op,},
+		{sbc_ec,},
+		{sbc_rc,},
 		{spc_illegal_op,},
 		{spc_illegal_op,},
 		{spc_illegal_op,},
 
 		{sbc_rw, NULL, PR_EA_FA|PR_EA_FN},
-		/* {sbc_rw, NULL, PR_EA_FA|PR_EA_FN}, */
-		{spc_illegal_op,},
+		{sbc_rw, NULL, PR_EA_FA|PR_EA_FN},
+		/*{spc_illegal_op,},*/
 		{sbc_rw, NULL, PR_WE_FA|PR_EA_FA|PR_WE_FN|PR_EA_FN},
 		{sbc_rw, NULL, PR_EA_FA|PR_EA_FN},
 		{spc_illegal_op,},
