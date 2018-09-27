@@ -283,7 +283,7 @@ int lu_prevent_removal(struct scsi_lu *lu)
 
 int it_nexus_create(int tid, uint64_t itn_id, int host_no, char *info)
 {
-	int ret;
+	// int ret;
 	struct target *target;
 	struct it_nexus *itn;
 	struct scsi_lu *lu;
@@ -321,17 +321,19 @@ int it_nexus_create(int tid, uint64_t itn_id, int host_no, char *info)
 		itn_lu->itn_id = itn_id;
 		INIT_LIST_HEAD(&itn_lu->pending_ua_sense_list);
 
+		/* remove UA for HA case
 		ret = ua_sense_add(itn_lu, ASC_POWERON_RESET);
 		if (ret) {
 			free(itn_lu);
 			goto out;
 		}
+		*/
 
 		list_add_tail(&itn_lu->lu_itl_info_siblings,
-			      &lu->lu_itl_info_list);
+		    &lu->lu_itl_info_list);
 
 		list_add(&itn_lu->itn_itl_info_siblings,
-			 &itn->itn_itl_info_list);
+		    &itn->itn_itl_info_list);
 	}
 
 	INIT_LIST_HEAD(&itn->cmd_list);
@@ -365,6 +367,9 @@ int it_nexus_destroy(int tid, uint64_t itn_id)
 	}
 
 	it_nexus_del_lu_info(itn);
+
+	if (itn->xcopy_status)
+		free(itn->xcopy_status);
 
 	list_del(&itn->nexus_siblings);
 	free(itn);
@@ -1425,7 +1430,6 @@ enum mgmt_req_result target_mgmt_request(int tid, uint64_t itn_id,
 					asc = (itn->itn_id == itn_id) ?
 						ASC_POWERON_RESET :
 						ASC_CMDS_CLEARED_BY_ANOTHER_INI;
-
 					asc = ua_sense_add(itn_lu, asc);
 					break;
 				}
@@ -2381,7 +2385,7 @@ tgtadm_err system_show(int mode, struct concat_buf *b)
 
 	concat_printf(b, "System:\n");
 	concat_printf(b, _TAB1 "State: %s\n", system_state_name(sys_state));
-	concat_printf(b, _TAB1 "debug: %s\n", is_debug ? "on" : "off");
+	concat_printf(b, _TAB1 "debug: %s\n", g_debug ? "on" : "off");
 
 	concat_printf(b, "LLDs:\n");
 	for (i = 0; tgt_drivers[i]; i++) {

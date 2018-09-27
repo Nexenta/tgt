@@ -2,7 +2,7 @@
 #define TGTADM_H
 
 #define TGT_IPC_DIR		"/var/run/tgtd"
-#define TGT_IPC_NAMESPACE	TGT_IPC_DIR"/socket"
+#define TGT_IPC_NAMESPACE	"tgtd.ipc_abstract_namespace"
 #define TGT_LLD_NAME_LEN	64
 
 #define GLOBAL_TID (~0U)

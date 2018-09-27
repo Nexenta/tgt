@@ -53,7 +53,7 @@ static LIST_HEAD(finished_list);
 static pthread_mutex_t finished_lock;
 
 /* used by both bs_rdwr.c and bs_rbd.c */
-int nr_iothreads = 16;
+int nr_iothreads = 8;
 
 static int sig_fd = -1;
 

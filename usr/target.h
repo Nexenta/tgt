@@ -63,6 +63,8 @@ struct it_nexus {
 
 	/* only used for show operation */
 	char *info;
+	/* third-party copy status pointer */
+	void *xcopy_status;
 };
 
 enum {

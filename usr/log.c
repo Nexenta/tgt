@@ -43,8 +43,9 @@
 
 static struct logarea *la;
 static char *log_name;
-int is_debug = 0;
+int g_debug = 0;
 static pid_t pid;
+FILE *g_tgtd_log = NULL;
 
 static int logarea_init (int size)
 {
@@ -356,7 +357,7 @@ static void log_sigsegv(void)
 
 int log_init(char *program_name, int size, int daemon, int debug)
 {
-	is_debug = debug;
+	g_debug = debug;
 
 	logdbg(stderr,"enter log_init\n");
 	log_name = program_name;
@@ -365,7 +366,7 @@ int log_init(char *program_name, int size, int daemon, int debug)
 		struct sigaction sa_old;
 		struct sigaction sa_new;
 
-		openlog(log_name, 0, LOG_DAEMON);
+		openlog(log_name, LOG_PID, LOG_DAEMON);
 		setlogmask (LOG_UPTO (LOG_DEBUG));
 
 		if (logarea_init(size)) {
@@ -382,7 +383,7 @@ int log_init(char *program_name, int size, int daemon, int debug)
 			syslog(LOG_WARNING,
 			       "tgtd daemon started, pid:%d\n", getpid());
 			syslog(LOG_WARNING,
-			       "tgtd logger started, pid:%d debug:%d\n", pid, is_debug);
+			       "tgtd logger started, pid:%d debug:%d\n", pid, g_debug);
 			return 0;
 		}
 

@@ -41,6 +41,7 @@ union semun {
 #define LOG_SPACE_SIZE 16384
 #define MAX_MSG_SIZE 256
 
+extern int g_debug;
 extern int log_daemon;
 extern int log_level;
 
@@ -85,15 +86,48 @@ do {									\
 			__FUNCTION__, __LINE__, ##args);		\
 } while (0)
 #else
-#define eprintf(fmt, args...)						\
-do {									\
-	log_error("%s(%d) " fmt, __FUNCTION__, __LINE__, ##args);	\
+#include <sys/types.h>
+#include <unistd.h>
+#include <sys/time.h>
+#include <time.h>
+#include <stdio.h>
+#include <syscall.h>
+extern FILE *g_tgtd_log;
+extern int is_daemon;
+#define eprintf(fmt, args...) \
+do { \
+	if (g_tgtd_log) { \
+		struct timeval tp; \
+		gettimeofday(&tp, 0); \
+		unsigned long pid = getpid(); \
+		unsigned long thrid = syscall(SYS_gettid); \
+		time_t meow = time(NULL); \
+		char buf[64]; \
+		struct tm tm; \
+		strftime(buf, sizeof (buf), "%Y-%m-%d %H:%M:%S", localtime_r(&meow, &tm)); \
+		fprintf(is_daemon ? g_tgtd_log : stderr, "[%lu.%lu] %c, %s.%03d : %s " fmt, pid, thrid, 'E', buf, (int)(tp.tv_usec/1000), __FUNCTION__, ##args); \
+	} else { \
+		log_error("%s(%d) " fmt, __FUNCTION__, __LINE__, ##args); \
+	} \
 } while (0)
 
-#define dprintf(fmt, args...)						\
-do {									\
-	if (unlikely(is_debug))						\
-		log_debug("%s(%d) " fmt, __FUNCTION__, __LINE__, ##args); \
+#define dprintf(fmt, args...) \
+do { \
+	if (unlikely(g_debug)) { \
+		if (g_tgtd_log) { \
+			struct timeval tp; \
+			gettimeofday(&tp, 0); \
+			unsigned long pid = getpid(); \
+			unsigned long thrid = syscall(SYS_gettid); \
+			time_t meow = time(NULL); \
+			char buf[64]; \
+			struct tm tm; \
+			strftime(buf, sizeof (buf), "%Y-%m-%d %H:%M:%S", localtime_r(&meow, &tm)); \
+			fprintf(is_daemon ? g_tgtd_log : stderr, "[%lu.%lu] %c, %s.%03d : %s:%d %s: " fmt, pid, thrid, 'D', buf, (int)(tp.tv_usec/1000), __FILE__, __LINE__, __FUNCTION__, ##args); \
+		} else { \
+			log_debug("%s(%d) " fmt, __FUNCTION__, __LINE__, ##args); \
+		} \
+	} \
 } while (0)
 #endif
 

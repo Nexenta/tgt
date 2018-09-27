@@ -258,6 +258,7 @@ enum mgmt_req_result {
 	MGMT_REQ_QUEUED,
 };
 
+extern char *tmpdir;
 extern int system_active;
 extern int is_debug;
 extern int nr_iothreads;

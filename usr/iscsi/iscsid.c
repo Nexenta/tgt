@@ -889,7 +889,12 @@ static void text_scan_text(struct iscsi_connection *conn)
 				port = ntohs(((struct sockaddr_in *)
 						&ss)->sin_port);
 
-			sprintf(p, ":%d,1", port);
+			char *override = getenv("TGT_PORTAL_OVERRIDE_ADDR");
+			if (override) {
+				sprintf(buf, "%s:%d,1", override, port);
+			} else {
+				sprintf(p, ":%d,1", port);
+			}
 			target_list_build(conn, buf,
 					  strcmp(value, "All") ? value : NULL);
 		} else

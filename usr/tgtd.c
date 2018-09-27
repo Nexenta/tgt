@@ -52,6 +52,7 @@ static LIST_HEAD(tgt_events_list);
 static LIST_HEAD(tgt_sched_events_list);
 
 static struct option const long_options[] = {
+	{"tmpdir", required_argument, 0, 'x'},
 	{"foreground", no_argument, 0, 'f'},
 	{"control-port", required_argument, 0, 'C'},
 	{"nr_iothreads", required_argument, 0, 't'},
@@ -61,8 +62,9 @@ static struct option const long_options[] = {
 	{0, 0, 0, 0},
 };
 
-static char *short_options = "fC:d:t:Vh";
+static char *short_options = "x:fC:d:t:Vh";
 static char *spare_args;
+char *tmpdir = NULL;
 
 static void usage(int status)
 {
@@ -76,6 +78,7 @@ static void usage(int status)
 		"Usage: %s [OPTION]\n"
 		"-f, --foreground        make the program run in the foreground\n"
 		"-C, --control-port NNNN use port NNNN for the mgmt channel\n"
+		"-x, --tmpdir DIR        temporary directory to use\n"
 		"-t, --nr_iothreads NNNN specify the number of I/O threads\n"
 		"-d, --debug debuglevel  print debugging information\n"
 		"-V, --version           print version and exit\n"
@@ -103,9 +106,19 @@ static void version(void)
 
 /* Default TGT mgmt port */
 short int control_port;
+int is_daemon = 1;
 
 static void signal_catch(int signo)
 {
+	char path[64];
+
+	sprintf(path, "%s/tgtd-%d.pid", tmpdir ?
+		tmpdir : "/var/tmp", control_port);
+	if (is_daemon && (signo == SIGINT || signo == SIGTERM ||
+		    signo == SIGPIPE)) {
+		unlink(path);
+	}
+	exit(0);
 }
 
 static int oom_adjust(void)
@@ -113,6 +126,9 @@ static int oom_adjust(void)
 	int fd, err;
 	const char *path, *score;
 	struct stat st;
+
+	if (getpid() != 0)
+		return 0;
 
 	/* Avoid oom-killer */
 	path = "/proc/self/oom_score_adj";
@@ -142,12 +158,41 @@ static int oom_adjust(void)
 	return 0;
 }
 
+static int write_daemon_pid(void)
+{
+	FILE *f;
+	int fd;
+	char path[64];
+
+	sprintf(path, "%s/tgtd-%d.pid", tmpdir ? tmpdir : "/var/tmp",
+		control_port);
+	fd = open(path, O_RDWR|O_CREAT, 0644);
+	if (fd < 0) {
+		fprintf(stderr, "can't write pid %s, %m\n", path);
+		return errno;
+	}
+	if ((f = fdopen(fd, "r+")) == NULL) {
+		close(fd);
+		return errno;
+	}
+	if (!fprintf(f, "%ld\n", (long)getpid())) {
+		fclose(f);
+		return errno;
+	}
+	fflush(f);
+	fclose(f);
+	return 0;
+}
+
 static int nr_file_adjust(void)
 {
 	int ret, fd, max = 1024 * 1024;
 	char path[] = "/proc/sys/fs/nr_open";
 	char buf[64];
 	struct rlimit rlim;
+
+	if (getpid() != 0)
+		return 0;
 
 	/* Avoid oom-killer */
 	fd = open(path, O_RDONLY);
@@ -360,7 +405,7 @@ int call_program(const char *cmd, void (*callback)(void *data, int result),
 		} while (ret_sel < 0 && errno == EINTR);
 		if (ret_sel <= 0) { /* error or timeout */
 			eprintf("timeout on redirect callback, terminating "
-				"child pid %d\n", pid);
+				"child pid %lu\n", (unsigned long)pid);
 			kill(pid, SIGTERM);
 		}
 		do {
@@ -523,7 +568,7 @@ int main(int argc, char **argv)
 	struct sigaction sa_old;
 	struct sigaction sa_new;
 	int err, ch, longindex, nr_lld = 0;
-	int is_daemon = 1, is_debug = 0;
+	int is_debug = 0;
 	int ret;
 
 	sa_new.sa_handler = signal_catch;
@@ -531,6 +576,7 @@ int main(int argc, char **argv)
 	sa_new.sa_flags = 0;
 	sigaction(SIGPIPE, &sa_new, &sa_old);
 	sigaction(SIGTERM, &sa_new, &sa_old);
+	sigaction(SIGINT, &sa_new, &sa_old);
 
 	pagesize = sysconf(_SC_PAGESIZE);
 	for (pageshift = 0;; pageshift++)
@@ -544,6 +590,9 @@ int main(int argc, char **argv)
 		switch (ch) {
 		case 'f':
 			is_daemon = 0;
+			break;
+		case 'x':
+			tmpdir = optarg;
 			break;
 		case 'C':
 			ret = str_to_int_ge(optarg, control_port, 0);
@@ -586,16 +635,36 @@ int main(int argc, char **argv)
 
 	spare_args = optind < argc ? argv[optind] : NULL;
 
-	if (is_daemon && daemon(0, 0))
+	if (is_daemon && daemon(1, 1))
 		exit(1);
 
 	err = ipc_init();
 	if (err)
 		exit(1);
 
-	err = log_init(program_name, LOG_SPACE_SIZE, is_daemon, is_debug);
+	g_debug = is_debug;
+	char *env_stdout = getenv("CCOW_LOG_STDOUT");
+	char *env_syslog = (env_stdout && atoi(env_stdout)) ?
+		NULL : getenv("CCOW_LOG_SYSLOG");
+	int do_logfile = !env_syslog || atoi(env_syslog) == 0;
+	if (do_logfile) {
+		g_tgtd_log = fopen("/opt/nedge/var/log/tgtd.log", "a+");
+		if (g_tgtd_log == NULL)
+			err = errno;
+	} else {
+		err = log_init(program_name, LOG_SPACE_SIZE, is_daemon, is_debug);
+	}
 	if (err)
 		exit(1);
+
+	if (is_daemon && write_daemon_pid())
+		exit(1);
+
+	err = setpriority(PRIO_PROCESS, getpid(), -15);
+	if (err) {
+		fprintf(stderr, "unable to set process highest priority\n");
+		err = 0;
+	}
 
 	nr_lld = lld_init();
 	if (!nr_lld) {
@@ -629,7 +698,10 @@ int main(int argc, char **argv)
 
 	ipc_exit();
 
-	log_close();
+	if (g_tgtd_log)
+		fclose(g_tgtd_log);
+	else
+		log_close();
 
 	return 0;
 }

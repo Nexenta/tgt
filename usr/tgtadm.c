@@ -99,6 +99,7 @@ struct option const long_options[] = {
 	{"debug", no_argument, NULL, 'd'},
 	{"help", no_argument, NULL, 'h'},
 	{"version", no_argument, NULL, 'V'},
+	{"tmpdir", required_argument, NULL, 'x'},
 	{"lld", required_argument, NULL, 'L'},
 	{"op", required_argument, NULL, 'o'},
 	{"mode", required_argument, NULL, 'm'},
@@ -129,7 +130,7 @@ struct option const long_options[] = {
 };
 
 static char *short_options =
-		"dhVL:o:m:t:s:c:l:n:v:b:E:f:y:T:I:Q:u:p:H:F:P:B:Y:O:C:S:";
+		"dhVx:L:o:m:t:s:c:l:n:v:b:E:f:y:T:I:Q:u:p:H:F:P:B:Y:O:C:S:";
 
 static void usage(int status)
 {
@@ -189,6 +190,7 @@ static void usage(int status)
 		"--lld <driver> --mode lld --op start\n"
 		"\tStart the specified lld without restarting the tgtd process.\n"
 		"--control-port <port> use control port <port>\n"
+		"-x, --tmpdir <dir> temporary directory to use\n"
 		"--help\n"
 		"\tdisplay this help and exit\n\n"
 		"Report bugs to <stgt@vger.kernel.org>.\n",
@@ -204,12 +206,13 @@ static void version(void)
 
 /* default port to use for the mgmt channel */
 static short int control_port;
+static char *tmpdir = NULL;
 
 static int ipc_mgmt_connect(int *fd)
 {
 	int err;
 	struct sockaddr_un addr;
-	char mgmt_path[256], *path;
+	char mgmt_path[256];
 
 	*fd = socket(AF_LOCAL, SOCK_STREAM, 0);
 	if (*fd < 0) {
@@ -219,10 +222,8 @@ static int ipc_mgmt_connect(int *fd)
 
 	memset(&addr, 0, sizeof(addr));
 	addr.sun_family = AF_LOCAL;
-	if ((path = getenv("TGT_IPC_SOCKET")) == NULL)
-		path = TGT_IPC_NAMESPACE;
-	snprintf(mgmt_path, sizeof(mgmt_path), "%s.%d",
-			 path, control_port);
+	sprintf(mgmt_path, "%s/%s.%d", tmpdir ? tmpdir : "/var/tmp",
+		TGT_IPC_NAMESPACE, control_port);
 
 	strncpy(addr.sun_path, mgmt_path, sizeof(addr.sun_path));
 
@@ -483,7 +484,8 @@ static int verify_mode_params(int argc, char **argv, char *allowed)
 
 	while ((ch = getopt_long(argc, argv, short_options,
 				 long_options, &longindex)) >= 0) {
-		if (!strchr(allowed, ch) && !strchr("d", ch)) {
+		if (!strchr(allowed, ch) && !strchr("d", ch) &&
+		    !strchr("x", ch)) {
 			ret = ch;
 			break;
 		}
@@ -559,6 +561,9 @@ int main(int argc, char **argv)
 				portalOps = optarg;
 			else
 				targetOps = optarg;
+			break;
+		case 'x':
+			tmpdir = optarg;
 			break;
 		case 'n':
 			name = optarg;

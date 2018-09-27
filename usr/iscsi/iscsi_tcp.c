@@ -375,8 +375,15 @@ int iscsi_tcp_init_portal(char *addr, int port, int tpgt)
 				    res->ai_addr)->sin6_addr;
 			break;
 		}
-		portal->addr = strdup(inet_ntop(res->ai_family, addrptr,
-			     addrstr, sizeof(addrstr)));
+		char *override = getenv("TGT_PORTAL_OVERRIDE_ADDR");
+		if (override) {
+			portal->addr = strdup(override);
+			eprintf("Overriding portal with %s\n", portal->addr);
+		} else {
+			portal->addr = strdup(inet_ntop(res->ai_family, addrptr,
+				     addrstr, sizeof(addrstr)));
+			eprintf("Detected portal addr %s\n", portal->addr);
+		}
 		portal->port = port;
 		portal->tpgt = tpgt;
 		portal->fd   = fd;
